@@ -36,6 +36,24 @@ face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 # Initialize mapping variables
 map_data = {}  # Dictionary to store room names and coordinates
 
+# Initialize GUI
+root = tk.Tk()
+root.title("Personal Robot")
+
+# Create a canvas for displaying the camera feed
+canvas = tk.Canvas(root, width=640, height=480)
+canvas.pack()
+
+# Create labels for battery life, time, and connectivity
+battery_label = tk.Label(root, text="Battery: 100%", font=("Helvetica", 14))
+battery_label.pack()
+
+time_label = tk.Label(root, text="Time: ", font=("Helvetica", 14))
+time_label.pack()
+
+connectivity_label = tk.Label(root, text="Connectivity: Connected to Raspberry Pi", font=("Helvetica", 14))
+connectivity_label.pack()
+
 # Function to control the motors
 def move_motors(direction):
     if direction == 'forward':
@@ -67,7 +85,15 @@ def recognize_person():
         for (x, y, w, h) in faces:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-        cv2.imshow('Face Recognition', frame)
+        # Convert the OpenCV image to a Tkinter-compatible image
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(img)
+        img = ImageTk.PhotoImage(image=img)
+
+        # Update the canvas with the new image
+        canvas.create_image(0, 0, anchor=tk.NW, image=img)
+
+        root.update()
 
         if cv2.waitKey(1) == ord('q'):
             break
@@ -85,56 +111,41 @@ def process_command(command):
         engine.say("Stopping person recognition.")
         engine.runAndWait()
         move_motors('stop')
-    elif 'recognize this house' in command:
-        engine.say("Starting house recognition. Please guide me through the house.")
-        engine.runAndWait()
-        recognize_house()
     else:
         engine.say("Command not recognized.")
         engine.runAndWait()
 
-# Mapping logic
-def create_map():
-    engine.say("Creating a map of the house.")
-    engine.runAndWait()
-    # Implement mapping logic here
-    # Update the map_data dictionary with room names and coordinates
-
-# Function for house recognition
+# Function to recognize the house and memorize rooms
 def recognize_house():
-    while True:
-        ret, frame = camera.read()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Perform house recognition using distance sensors or mapping cameras
-        # Update map_data dictionary with room names and coordinates as new rooms are detected
-        cv2.imshow('House Recognition', frame)
-
-        if cv2.waitKey(1) == ord('q'):
-            break
-
-    camera.release()
-    cv2.destroyAllWindows()
-    create_map()
+    # Implement house recognition using distance sensors or mapping cameras
+    # Update the map_data dictionary with room names and coordinates as new rooms are detected
+    pass
 
 # Function to display the house map
 def display_house_map():
-    map_image = np.zeros((500, 500, 3), np.uint8)  # Create a blank image
+    # Create a blank image
+    map_image = np.zeros((500, 500, 3), np.uint8)
+
+    # Draw room labels on the map
     for room, (x, y) in map_data.items():
         cv2.putText(map_image, room, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
+    # Display the map in a new window
     cv2.imshow("House Map", map_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 # Main function
 def main():
+    global engine
+
     engine = pyttsx3.init()
 
     # Start virtual assistant
     def start_assistant():
         while True:
             r = sr.Recognizer()
-            with sr.Microphone() as source:
+            with sr.Microphone(device_index=1) as source:  # Set the correct device index for the USB microphone
                 print("Listening...")
                 audio = r.listen(source)
 
@@ -147,7 +158,16 @@ def main():
                 print("Sorry, I didn't understand that.")
                 print(e)
 
+    # Create buttons for recognizing the house and displaying the house map
+    recognize_button = tk.Button(root, text="Recognize This House", command=recognize_house)
+    recognize_button.pack()
+
+    display_map_button = tk.Button(root, text="Display House Map", command=display_house_map)
+    display_map_button.pack()
+
     start_assistant()
+
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
