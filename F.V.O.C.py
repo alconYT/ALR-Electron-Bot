@@ -1,3 +1,9 @@
+import RPi.GPIO as GPIO
+import cv2
+import numpy as np
+import pyttsx3
+import time
+import subprocess
 import speech_recognition as sr
 import pyttsx3
 import openai
@@ -5,27 +11,6 @@ import datetime
 import psutil
 import webbrowser
 import tkinter as tk
-import subprocess
-import RPi.GPIO as GPIO
-import cv2
-import numpy as np
-import time
-
-# Configure OpenAI Chat GPT
-openai.api_key = 'YOUR_OPENAI_API_KEY'
-assistant_model = 'gpt-3.5-turbo'
-
-# Set up speech recognition with Adafruit Silicon MEMS microphone
-r = sr.Recognizer()
-mic = sr.Microphone(device_index=0)  # Replace 0 with the correct device index for your microphone
-
-# Set up text-to-speech
-engine = pyttsx3.init()
-
-# Set up tkinter GUI
-root = tk.Tk()
-root.geometry("400x300")
-root.title("Electron Assistant")
 
 # Set GPIO pin numbers
 motor1_pin1 = 11
@@ -47,6 +32,9 @@ GPIO.setup(motor2_enable_pin, GPIO.OUT)
 # Initialize camera and face detection
 camera = cv2.VideoCapture(0)
 face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+# Initialize mapping variables
+map_data = {}  # Dictionary to store room names and coordinates
 
 # Function to control the motors
 def move_motors(direction):
@@ -97,110 +85,69 @@ def process_command(command):
         engine.say("Stopping person recognition.")
         engine.runAndWait()
         move_motors('stop')
+    elif 'recognize this house' in command:
+        engine.say("Starting house recognition. Please guide me through the house.")
+        engine.runAndWait()
+        recognize_house()
     else:
-        engine.say("Sorry, I couldn't understand that command.")
+        engine.say("Command not recognized.")
         engine.runAndWait()
 
-# Function to get internal temperature of the Raspberry Pi
-def get_temperature():
-    result = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True)
-    temperature = result.stdout.decode().split('=')[1].split("'")[0]
-    return temperature
+# Mapping logic
+def create_map():
+    engine.say("Creating a map of the house.")
+    engine.runAndWait()
+    # Implement mapping logic here
+    # Update the map_data dictionary with room names and coordinates
 
-# Function to get battery level of the Raspberry Pi
-def get_battery_level():
-    result = subprocess.run(['upower', '-i', '/org/freedesktop/UPower/devices/battery_BAT0'], capture_output=True)
-    output = result.stdout.decode()
-    percentage = None
-    for line in output.split('\n'):
-        if 'percentage' in line:
-            percentage = line.split(':')[1].strip()
+# Function for house recognition
+def recognize_house():
+    while True:
+        ret, frame = camera.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Perform house recognition using distance sensors or mapping cameras
+        # Update map_data dictionary with room names and coordinates as new rooms are detected
+        cv2.imshow('House Recognition', frame)
+
+        if cv2.waitKey(1) == ord('q'):
             break
-    return percentage
 
-# Function to display the information on the Samsung Galaxy Tab S2
-def display_info():
-    # Update the time
-    current_time = time.strftime('%H:%M:%S')
-    subprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'android.intent.action.TIME_SET', '--es', 'time', current_time])
+    camera.release()
+    cv2.destroyAllWindows()
+    create_map()
 
-    # Update the internal temperature
-    temperature = get_temperature()
-    subprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'com.example.robot.SET_TEMPERATURE', '--es', 'temperature', temperature])
+# Function to display the house map
+def display_house_map():
+    map_image = np.zeros((500, 500, 3), np.uint8)  # Create a blank image
+    for room, (x, y) in map_data.items():
+        cv2.putText(map_image, room, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
-    # Update the battery level
-    battery_level = get_battery_level()
-    subprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'com.example.robot.SET_BATTERY_LEVEL', '--es', 'battery_level', battery_level])
+    cv2.imshow("House Map", map_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-    # Display the voice assistant options
-    voice_assistant_options = ['Google Assistant', 'Amazon Alexa', 'Microsoft Cortana']
-    for index, option in enumerate(voice_assistant_options):
-        subprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'com.example.robot.SET_VOICE_OPTION', '--ei', 'option_index', str(index), '--es', 'option_name', option])
+# Main function
+def main():
+    engine = pyttsx3.init()
 
-    # Sleep for a while to allow the Samsung Galaxy Tab S2 to process the updates
-    time.sleep(2)
+    # Start virtual assistant
+    def start_assistant():
+        while True:
+            r = sr.Recognizer()
+            with sr.Microphone() as source:
+                print("Listening...")
+                audio = r.listen(source)
 
-# Function to set the background image of the Samsung Galaxy Tab S2
-def set_background_image(image_path):
-    subprocess.run(['adb', 'shell', 'am', 'broadcast', '-a', 'com.example.robot.SET_BACKGROUND_IMAGE', '--es', 'image_path', image_path])
+            try:
+                print("Recognizing...")
+                command = r.recognize_google(audio)
+                print(f"Command: {command}")
+                process_command(command)
+            except Exception as e:
+                print("Sorry, I didn't understand that.")
+                print(e)
 
-# Start the voice assistant
-def start_assistant():
-    command = get_voice_command()
-    if 'electron' in command:
-        if 'follow me' in command:
-            speak("Starting follow me functionality.")
-            subprocess.Popen(['python', 'follow_me_code.py'])  # Replace 'follow_me_code.py' with your actual code file
-        else:
-            speak("How can I assist you?")
-            while True:
-                user_input = get_voice_command()
-                if 'stop' in user_input:
-                    break
-                
-                if 'wifi' in user_input:
-                    # Check internet connectivity
-                    has_internet = True  # Replace with your internet connectivity check logic
-                    
-                    if has_internet:
-                        # Pass user input to OpenAI Chat GPT
-                        prompt = f"User: {user_input}\nAssistant:"
-                        response = generate_chat_response(prompt)
-                        
-                        # Output the response
-                        print(response)
-                        show_popup(response)
-                        speak(response)
-                    else:
-                        if 'time' in user_input:
-                            current_time = get_current_time()
-                            print(f"The current time is {current_time}")
-                            show_popup(f"The current time is {current_time}")
-                            speak(f"The current time is {current_time}")
-                        elif 'date' in user_input:
-                            current_date = get_current_date()
-                            print(f"The current date is {current_date}")
-                            show_popup(f"The current date is {current_date}")
-                            speak(f"The current date is {current_date}")
-                        elif 'battery' in user_input:
-                            battery_life = get_battery_life()
-                            print(f"The current battery life is {battery_life}%")
-                            show_popup(f"The current battery life is {battery_life}%")
-                            speak(f"The current battery life is {battery_life}%")
-                        else:
-                            query = user_input
-                            search_on_browser(query)
-                            show_popup(f"Performing a search for '{query}'")
-                else:
-                    show_popup("I'm sorry, I can only provide limited functionality without an internet connection.")
-                    speak("I'm sorry, I can only provide limited functionality without an internet connection.")
-
-# Continuously update and display the information
-while True:
-    set_background_image('/path/to/your/image.jpg')  # Set the path to your desired background image
-    display_info()
     start_assistant()
-    time.sleep(1)
 
-root.mainloop()
-"
+if __name__ == "__main__":
+    main()
